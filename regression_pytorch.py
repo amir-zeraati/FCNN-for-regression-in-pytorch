@@ -28,11 +28,12 @@ from sklearn.preprocessing import MinMaxScaler
 # the dataset is from sklearn, you can use your own dataset
 data = fetch_california_housing()
 print(data.feature_names)
+# df = pd.read_csv('{}'.format(args.listfile), compression='gzip')
 
 X, y = data.data, data.target
 print(X.shape, y.shape)
 # train-test split of the dataset
-X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.7,
+X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.8,
                                                     shuffle=True)
 
 torch.cuda.empty_cache()
@@ -40,7 +41,9 @@ loss_func = F.mse_loss
 
 # make it automatic Later
 num_inputs = X.shape[1]
-num_outputs = y.shape[1]
+num_outputs = 1
+y_train = y_train.reshape(-1, 1)
+y_test = y_test.reshape(-1, 1)
 
 
 class MLP(nn.Module):
@@ -70,7 +73,7 @@ def loss_batch(model, loss_func, xb, yb, opt=None):
     return loss.item(), len(xb)
 
 
-def fit(epochs, model, loss_func, opt, train_dl, valid_dl):
+def fit(epochs, model, loss_func, opt, train_dl, valid_dl=None):
     # Early stopping
     last_loss = np.inf
     patience = 3
@@ -182,14 +185,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    df = pd.read_csv('{}'.format(args.listfile), compression='gzip')
-    masks = pd.read_csv('data/hg19_2000_no_N_inside.csv')
-    print('Number of NANs is {}'.format(masks['signal'].sum()))
-    df.loc[~masks['signal'].astype(bool)] = np.nan
-    df = df.dropna()
-    min_init = np.min(df['initiation'])
-    max_init = np.max(df['initiation'])
-    print(df)
     print(torch.cuda.is_available())
     device = torch.device(
         "cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -203,27 +198,26 @@ if __name__ == '__main__':
         model = nn.DataParallel(model)
         model = model.to(device)
         if args.preprocessing == 'min max normalization':
-            # costumize it to your case, try to make it automatic
-            for i in args.marks + ['initiation']:
-                df[i] = (df[i] - np.min(df[i])) / (
-                    np.max(df[i]) - np.min(df[i]))
-        
-        # costumize it to your case, try to make it automatic
-        X_train = df.loc[df['chrom'] != 'chr1', args.marks].to_numpy()
-        print(X_train.shape)
-        y_train = df.loc[df['chrom'] != 'chr1', args.output].to_numpy()
-        print(y_train.shape)
-        X_test = df.loc[df['chrom'] == 'chr1', args.marks].to_numpy()
-        y_test = df.loc[df['chrom'] == 'chr1', args.output].to_numpy()
-        X_train, y_train = shuffle(X_train, y_train)
-        X_val = torch.tensor(X_train[0:100000], dtype=float32).to(device)
-        y_val = torch.tensor(y_train[0:100000], dtype=float32).to(device)
-        X_train = torch.tensor(X_train[100000:], dtype=float32).to(device)
-        X_test = torch.tensor(X_test, dtype=float32).to(device)
-        y_train = torch.tensor(y_train[100000:], dtype=float32).to(device)
-        X_train = X_train.transpose(1, 2).contiguous()
-        X_test = X_test.transpose(1, 2).contiguous()
-        X_val = X_val.transpose(1, 2).contiguous()
+            scaler = MinMaxScaler()
+            scaler.fit(X_train)
+            X_train = scaler.transform(X_train)
+            X_test = scaler.transform(X_test)
+            scaler_y = MinMaxScaler()
+            scaler_y.fit(y_train)
+            y_train = scaler_y.transform(y_train)
+            y_test = scaler_y.transform(y_test)
+        # validation split
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.25,
+                                                    shuffle=True) # 0.25 x 0.8 = 0.2
+        # Convert to 2D PyTorch tensors
+        X_train = torch.tensor(X_train, dtype=torch.float32).to(device)
+        y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1).to(device)
+        X_test = torch.tensor(X_test, dtype=torch.float32).to(device)
+        y_test = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1).to(device)
+        X_val = torch.tensor(X_val, dtype=torch.float32).to(device)
+        y_val = torch.tensor(y_val, dtype=torch.float32).reshape(-1, 1).to(device)
+
+        # X_train, y_train = shuffle(X_train, y_train)
         train_ds = TensorDataset(X_train, y_train)
         train_dl = DataLoader(train_ds, batch_size=args.batch_size)
         valid_ds = TensorDataset(X_val, y_val)
