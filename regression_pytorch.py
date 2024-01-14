@@ -119,6 +119,51 @@ def fit(epochs, model, loss_func, opt, train_dl, valid_dl=None):
             return best_model, val_loss_list, train_loss_list
         last_loss = current_loss
 
+
+def report(predicted, predicted_test, y_train, y_test,
+           preprocessing, output_dir, image_format):
+    print(mean_squared_error(predicted, y_train))
+    print(mean_squared_error(predicted_test, y_test))
+    plt.scatter(y_train.ravel(), predicted, s=0.1)
+    plt.title('Predicted values with respect to the observed values')
+    plt.ylabel('Predicted vlaues')
+    plt.xlabel('Observed values')
+    plt.axis('square')
+    plt.savefig('{}{}distribution_performance.{}'.format(output_dir,
+                                                         preprocessing,
+                                                         image_format),
+                dpi=300, bbox_inches='tight')
+    plt.savefig('{}{}distribution_performance.eps'.format(output_dir,
+                                                          preprocessing),
+                dpi=300, bbox_inches='tight')
+    plt.close()
+    plt.figure(figsize=(5, 5))
+    plt.plot([p1, p2], [p1, p2], 'w-')
+    plt.hist2d(y_train.ravel(),
+               predicted.ravel(),
+               bins=[300, 300], cmap=plt.cm.nipy_spectral)
+    plt.colorbar()
+    plt.xlabel('observed values')
+    plt.ylabel('predicted values')
+    plt.title('Predicted values with respect to the observed values')
+    plt.savefig('{}{}.{}'.format(output_dir, preprocessing,
+                                 image_format),
+                dpi=300, bbox_inches='tight', transparent=False)
+    plt.savefig('{}{}.eps'.format(output_dir, preprocessing),
+                dpi=300, bbox_inches='tight', transparent=False)
+    plt.close()
+    plt.plot(y_train[0:50], '-o')
+    plt.plot(predicted[0:50], '-o')
+    plt.legend(['Observed', 'Predicted'], loc='upper right')
+    plt.title('Comparison of observed values and predicted values by {}'.format(args.method))
+    plt.savefig('{}{}comaprison_r_p.{}'.format(output_dir, preprocessing,
+                                               image_format),
+                dpi=300, bbox_inches='tight', transparent=False)
+    plt.savefig('{}{}comaprison_r_p.eps'.format(output_dir,
+                                                preprocessing),
+                dpi=300, bbox_inches='tight', transparent=False)
+    plt.close()
+
 # modify it to automatic later
 # def interpret(model, X, y, predicted, output_dir, cell_line, marks,
 #               baseline_method='zero'):
@@ -170,7 +215,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--method', type=str, default='FCNN')
     parser.add_argument('--preprocessing', type=str, default='min max normalization')
-    parser.add_argument('--max_epoch', type=int, default=128)
+    parser.add_argument('--max_epoch', type=int, default=400)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--listfile', nargs='+', type=str,
                         default='data/K562_2000_merged_histones_init.csv.gz')
@@ -207,9 +252,10 @@ if __name__ == '__main__':
             y_train = scaler_y.transform(y_train)
             y_test = scaler_y.transform(y_test)
         # validation split
-        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.25,
-                                                    shuffle=True) # 0.25 x 0.8 = 0.2
-        # Convert to 2D PyTorch tensors
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train,
+                                                          test_size=0.25,
+                                                          shuffle=True) 
+        # 0.25 x 0.8 = 0.2
         X_train = torch.tensor(X_train, dtype=torch.float32).to(device)
         y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1).to(device)
         X_test = torch.tensor(X_test, dtype=torch.float32).to(device)
@@ -235,7 +281,6 @@ if __name__ == '__main__':
         model.eval()
         torch.manual_seed(123)
         np.random.seed(123)
-        # input = torch.rand(1, 11).to(device)
         model, val_loss_list, train_loss_list = fit(args.max_epoch, model,
                                                     loss_func, opt, train_dl,
                                                     valid_dl)
@@ -253,28 +298,17 @@ if __name__ == '__main__':
         plt.savefig('{}loss.{}'.format(args.output_dir, args.image_format),
                     dpi=300, bbox_inches='tight')
         plt.close()
-        X = df[args.marks].to_numpy()
-        X = torch.tensor(X, dtype=float32).to(device)
-        predicted_test = model(X_test).cpu().detach().numpy()
-        predicted = model(X_train).cpu().detach().numpy()
+        with torch.no_grad():
+            predicted_test = model(X_test).cpu().detach().numpy()
+            predicted = model(X_train).cpu().detach().numpy()
         y_train = y_train.cpu().detach().numpy()
-        # p1 = max(max(predicted), max(y_train))
-        # p2 = min(min(predicted), min(y_train))
-        p1 = -2
-        p2 = 2
-        y = model(X).cpu().detach().numpy()
-        if args.preprocessing == 'min max normalization':
-            y = y * (np.max(df['initiation']) - np.min(
-                                       df['initiation'])) + np.min(
-                                       df['initiation'])
-            df['initiation'] = df['initiation'] * (np.max(
-                               df['initiation']) - np.min(
-                               df['initiation'])) + np.min(df['initiation'])
-        df['predicted'] = y
+        y_test = y_test.cpu().detach().numpy()
+        p1 = max(max(predicted), max(y_train))
+        p2 = min(min(predicted), min(y_train))
         plt.plot([p1, p2], [p1, p2], '-', color='orange')
-        report(predicted, predicted_test, y_train, y_test, min_init, max_init,
+        report(predicted, predicted_test, y_train, y_test,
                preprocessing=args.preprocessing, output_dir=args.output_dir,
-               image_format=args.image_format, cell_line=args.cell_line)
+               image_format=args.image_format)
 
     if args.method == 'Integrated gradients':
         df = pd.read_csv('{}'.format(args.listfile), compression='gzip')
@@ -298,7 +332,7 @@ if __name__ == '__main__':
         interpret(model, X_test, y_test, predicted, output_dir=args.output_dir,
                   cell_line=args.cell_line, marks=args.marks,
                   baseline_method='zero')
-    # add it to FCNN, try if you can generaliza it to apply for future models
+    # add it to FCNN, try if you can generalize it to apply for future models
     if args.method == 'log FCNN Gridsearch':
         for i in args.marks:
             df[i] = df[i] + np.min(df[i][(df[i] != 0)])
@@ -322,8 +356,6 @@ if __name__ == '__main__':
         valid_dl = DataLoader(valid_ds, batch_size=args.batch_size)
 
         def train_mlp(config, checkpoint_dir='development/', data_dir=None):
-            # net = MLP(config["units"], config["l1"], config["l2"])
-            # net = MLP(config["units"])
             net = MLP(config["units"])
             device = "cpu"
             if torch.cuda.is_available():
@@ -336,7 +368,6 @@ if __name__ == '__main__':
             # optimizer = optim.SGD(net.parameters(), lr=config["lr"], momentum=0.9)
             # optimizer = optim.Adam(net.parameters(), lr=config["lr"])
             optimizer = optim.Adam(net.parameters())
-            # optimizer = optim.Adam()
 
             if checkpoint_dir:
                 model_state, optimizer_state = torch.load(
