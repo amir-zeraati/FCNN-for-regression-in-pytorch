@@ -21,13 +21,27 @@ from sklearn.utils import shuffle
 from torch import float32, optim
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard import SummaryWriter
+from sklearn.datasets import fetch_california_housing
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+
+# the dataset is from sklearn, you can use your own dataset
+data = fetch_california_housing()
+print(data.feature_names)
+
+X, y = data.data, data.target
+print(X.shape, y.shape)
+# train-test split of the dataset
+X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.7,
+                                                    shuffle=True)
 
 torch.cuda.empty_cache()
 loss_func = F.mse_loss
 
 # make it automatic Later
-num_inputs = 11
-num_outputs = 1
+num_inputs = X.shape[1]
+num_outputs = y.shape[1]
+
 
 class MLP(nn.Module):
     def __init__(self, units=100):
@@ -39,8 +53,7 @@ class MLP(nn.Module):
         xb = F.relu(self.lin1(xb))
         xb = F.relu(self.lin2(xb))
         return xb
-    
-    
+
 
 def mlp(model=MLP()):
     return model, optim.Adam(model.parameters())
