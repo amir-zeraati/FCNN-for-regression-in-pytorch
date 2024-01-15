@@ -201,7 +201,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--method', type=str, default='FCNN')
     parser.add_argument('--preprocessing', type=str, default='min max normalization')
-    parser.add_argument('--max_epoch', type=int, default=4)
+    parser.add_argument('--max_epoch', type=int, default=400)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--listfile', nargs='+', type=str,
                         default='data/K562_2000_merged_histones_init.csv.gz')
