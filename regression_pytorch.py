@@ -164,49 +164,35 @@ def report(predicted, predicted_test, y_train, y_test,
                 dpi=300, bbox_inches='tight', transparent=False)
     plt.close()
 
-# modify it to automatic later
-# def interpret(model, X, y, predicted, output_dir, cell_line, marks,
-#               baseline_method='zero'):
-#     ig = IntegratedGradients(model)
-#     rows = []
-#     if baseline_method == 'zero':
-#         baseline = torch.zeros(1, 11, requires_grad=True).to(device)
-#     if baseline_method == 'mean':
-#         baseline = torch.mean(X, dim=0).requires_grad_()
-#         baseline = torch.reshape(baseline, (1, 11))
-#     if baseline_method == 'zero_output':
-#         baseline = torch.Tensor(np.array([1, 0.75, 0.8, 0.9, 1, 0.75, 1,
-#                                           1.5, 0.75, 1, 1]).reshape(1,
-#                                                                     11)
-#                                 ).requires_grad_().to(device)
-#     for i, input in enumerate(X):
-#         input.reshape(1, 11)
-#         attributions = ig.attribute(
-#             input, baseline, return_convergence_delta=False)
-#         attributions = attributions.detach().cpu()
-#         attributions = np.array(attributions)
-#         rows = np.append(rows, attributions)
-#         rows = np.append(rows, y[i])
-#         rows = np.append(rows, predicted[i])
-#     rows = np.array(rows)
-#     rows = np.reshape(rows, (-1, 13), order='C')
-#     columns_attr = ['Attribution_H2A.Z', 'Attributions_H3K27ac',
-#                     'Attributions_H3K79me2', 'Attributions_H3K27me3',
-#                     'Attributions_H3K9ac', 'Attributions_H3K4me2',
-#                     'Attributions_H3K4me3', 'Attributions_H3K9me3',
-#                     'Attributions_H3K4me1', 'Attributions_H3K36me3',
-#                     'Attributions_H4K20me1', 'PODLS', "Predicted_PODLS"]
-#     attributions = pd.DataFrame(rows,
-#                                 columns=columns_attr)
-#     # if the model is log to raw
-#     X = 10**X.cpu()
-#     df = pd.DataFrame(X.cpu(), columns=marks)
-#     attributions = pd.concat([attributions, df], axis=1).to_csv(
-#         '{}{}_{}_attributions.csv'.format(output_dir,
-#                                           cell_line,
-#                                           baseline_method))
-#     print('IG Attributions:', attributions)
-#     # print('Convergence Delta:', delta)
+
+def interpret(model, X, y, predicted, output_dir,
+              baseline_method='zero', num_inputs=num_inputs, feature_names=data.feature_names):
+    ig = IntegratedGradients(model)
+    rows = []
+    if baseline_method == 'zero':
+        baseline = torch.zeros(1, num_inputs, requires_grad=True).to(device)
+    for i, input in enumerate(X):
+        input.reshape(1, num_inputs)
+        attributions = ig.attribute(
+            input, baseline, return_convergence_delta=False)
+        attributions = attributions.detach().cpu()
+        attributions = np.array(attributions)
+        rows = np.append(rows, attributions)
+        rows = np.append(rows, y[i])
+        rows = np.append(rows, predicted[i])
+    rows = np.array(rows)
+    rows = np.reshape(rows, (-1, num_inputs + 2), order='C')
+    columns_attr = ["attr_" + feature for feature in feature_names]
+    columns_attr.append('observed')
+    columns_attr.append('predicted')
+    attributions = pd.DataFrame(rows,
+                                columns=columns_attr)
+    df = pd.DataFrame(X.cpu(), columns=feature_names)
+    attributions = pd.concat([attributions, df], axis=1)
+    attributions.to_csv('{}{}_attributions.csv'.format(output_dir,
+                                        baseline_method))
+    print('IG Attributions:', attributions)
+    # print('Convergence Delta:', delta)
 
 
 if __name__ == '__main__':
@@ -215,7 +201,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--method', type=str, default='FCNN')
     parser.add_argument('--preprocessing', type=str, default='min max normalization')
-    parser.add_argument('--max_epoch', type=int, default=400)
+    parser.add_argument('--max_epoch', type=int, default=4)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--listfile', nargs='+', type=str,
                         default='data/K562_2000_merged_histones_init.csv.gz')
@@ -309,29 +295,13 @@ if __name__ == '__main__':
         report(predicted, predicted_test, y_train, y_test,
                preprocessing=args.preprocessing, output_dir=args.output_dir,
                image_format=args.image_format)
-
-    if args.method == 'Integrated gradients':
-        df = pd.read_csv('{}'.format(args.listfile), compression='gzip')
-        masks = pd.read_csv('data/hg19_2000_no_N_inside.csv')
-        print('Number of NANs is {}'.format(masks['signal'].sum()))
-        df.loc[~masks['signal'].astype(bool)] = np.nan
-        df = df.dropna()
-        if args.preprocessing == 'log to raw':
-            for i in args.marks:
-                df[i] = df[i] + np.min(df[i][(df[i] != 0)])
-                df[i] = np.log10(df[i])
-        X_test = df.loc[df['chrom'] == 'chr1', args.marks].to_numpy()
-        y_test = df.loc[df['chrom'] == 'chr1', 'initiation'].to_numpy()
-        X_test = torch.tensor(X_test, dtype=float32).to(device)
-        model = MLP()
-        model = nn.DataParallel(model)
-        model.load_state_dict(torch.load('development/model_weights.pth'))
-        model.to(device)
-        model.eval()
-        predicted = model(X_test).detach().cpu().numpy()
-        interpret(model, X_test, y_test, predicted, output_dir=args.output_dir,
-                  cell_line=args.cell_line, marks=args.marks,
-                  baseline_method='zero')
+        # model = MLP()
+        # model = nn.DataParallel(model)
+        # model.load_state_dict(torch.load('development/model_weights.pth'))
+        # model.to(device)
+        # model.eval()
+        interpret(model, X_test, y_test, predicted_test, output_dir=args.output_dir,
+                  baseline_method='zero', num_inputs=num_inputs)
     # add it to FCNN, try if you can generalize it to apply for future models
     if args.method == 'log FCNN Gridsearch':
         for i in args.marks:
