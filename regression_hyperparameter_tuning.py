@@ -82,7 +82,7 @@ def mlp(model=MLP()):
     return model, optim.Adam(model.parameters())
 
 def train_mlp(config):
-    net = MLP(config["l1"], config["l2"])
+    net = MLP(config["l1"], config["l2"], config["units"])
 
     device = "cpu"
     if torch.cuda.is_available():
@@ -179,7 +179,7 @@ def train_mlp(config):
     print("Finished Training")
 
 def test_best_model(best_result):
-    best_trained_model = MLP(best_result.config["l1"], best_result.config["l2"])
+    best_trained_model = MLP(best_result.config["l1"], best_result.config["l2"], best_result.config["units"])
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     best_trained_model.to(device)
 
@@ -206,6 +206,7 @@ def main(num_samples=10, max_num_epochs=10, gpus_per_trial=2):
         "l2": tune.sample_from(lambda _: 2 ** np.random.randint(2, 9)),
         "lr": tune.loguniform(1e-4, 1e-1),
         "batch_size": tune.choice([2, 4, 8, 16]),
+        "units": tune.qrandint(40, 1000)
     }
     scheduler = ASHAScheduler(
         max_t=max_num_epochs,
