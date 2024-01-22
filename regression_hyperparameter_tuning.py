@@ -13,11 +13,11 @@ from ray.train import Checkpoint
 from ray.tune import CLIReporter
 from ray.tune.schedulers import ASHAScheduler
 from sklearn.datasets import fetch_california_housing
+from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from torch import float32, optim
 from torch.utils.data import DataLoader, TensorDataset
-from sklearn.metrics import mean_squared_error
 
 # the dataset is from sklearn, you can use your own dataset
 data = fetch_california_housing()
@@ -48,8 +48,8 @@ y_train = scaler_y.transform(y_train)
 y_test = scaler_y.transform(y_test)
 # validation split
 X_train, X_val, y_train, y_val = train_test_split(X_train, y_train,
-                                                          test_size=0.25,
-                                                          shuffle=True) 
+                                                  test_size=0.25,
+                                                  shuffle=True)
 # 0.25 x 0.8 = 0.2
 X_train = torch.tensor(X_train, dtype=torch.float32).to(device)
 y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1).to(device)
@@ -66,6 +66,7 @@ valid_dl = DataLoader(valid_ds, batch_size=128)
 test_ds = TensorDataset(X_test, y_test)
 test_dl = DataLoader(test_ds, batch_size=128)
 
+
 class MLP(nn.Module):
     def __init__(self, l1=120, l2=84, units=100):
         super().__init__()
@@ -80,6 +81,7 @@ class MLP(nn.Module):
 
 def mlp(model=MLP()):
     return model, optim.Adam(model.parameters())
+
 
 def train_mlp(config):
     net = MLP(config["l1"], config["l2"], config["units"])
@@ -178,20 +180,24 @@ def train_mlp(config):
             )
     print("Finished Training")
 
+
 def test_best_model(best_result):
-    best_trained_model = MLP(best_result.config["l1"], best_result.config["l2"], best_result.config["units"])
+    best_trained_model = MLP(best_result.config["l1"],
+                             best_result.config["l2"],
+                             best_result.config["units"])
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     best_trained_model.to(device)
 
-    checkpoint_path = os.path.join(best_result.checkpoint.to_directory(), "checkpoint.pt")
+    checkpoint_path = os.path.join(
+        best_result.checkpoint.to_directory(), "checkpoint.pt")
 
     model_state, optimizer_state = torch.load(checkpoint_path)
     best_trained_model.load_state_dict(model_state)
-    
+
     testloader = torch.utils.data.DataLoader(
         test_ds, shuffle=False, num_workers=0
     )
-    
+
     with torch.no_grad():
         outputs = best_trained_model(X_test)
         outputs = outputs.cpu().numpy()
@@ -212,7 +218,7 @@ def main(num_samples=10, max_num_epochs=10, gpus_per_trial=2):
         max_t=max_num_epochs,
         grace_period=1,
         reduction_factor=2)
-    
+
     tuner = tune.Tuner(
         tune.with_resources(
             tune.with_parameters(train_mlp),
@@ -227,24 +233,25 @@ def main(num_samples=10, max_num_epochs=10, gpus_per_trial=2):
         param_space=config,
     )
     results = tuner.fit()
-    
+
     best_result = results.get_best_result("loss", "min")
 
     print("Best trial config: {}".format(best_result.config))
     print("Best trial final validation loss: {}".format(
         best_result.metrics["loss"]))
-    
+
     test_best_model(best_result)
-    
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    
-    parser.add_argument('--preprocessing', type=str, default='min max normalization')
+
+    parser.add_argument('--preprocessing', type=str,
+                        default='min max normalization')
     parser.add_argument('--max_epoch', type=int, default=400)
     parser.add_argument('--batch_size', type=int, default=128)
-    
+
     args = parser.parse_args()
     print(torch.cuda.is_available())
-    
+
     main(num_samples=2, max_num_epochs=2, gpus_per_trial=1)

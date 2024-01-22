@@ -47,16 +47,17 @@ model = MLP()
 if __name__ == '__main__':
     with torch.no_grad():
         model = nn.DataParallel(model)
-        model.load_state_dict(torch.load('development/model_weights.pth', map_location=device))
-    
+        model.load_state_dict(torch.load('development/model_weights.pth',
+                                         map_location=device))
+
         if isinstance(model, torch.nn.DataParallel):  # extract the module from dataparallel models
             model = model.module
         model.cpu()
-        model.eval()  
+        model.eval()
         torch_input = torch.randn(1, num_inputs)
         onnx_program = torch.onnx.export(model,
-                        torch_input,
-                        'development/model.onnx')
+                                         torch_input,
+                                         'development/model.onnx')
     # import onnx
     # onnx_model = onnx.load("development/model.onnx")
     # onnx.checker.check_model(onnx_model)

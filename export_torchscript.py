@@ -47,8 +47,10 @@ model = MLP()
 if __name__ == '__main__':
     with torch.no_grad():
         model = nn.DataParallel(model)
-        model.load_state_dict(torch.load('development/model_weights.pth', map_location=device))
-        if isinstance(model, torch.nn.DataParallel):  # extract the module from dataparallel models
+        model.load_state_dict(torch.load('development/model_weights.pth',
+                                         map_location=device))
+        if isinstance(model,
+                      torch.nn.DataParallel):  # extract the module from dataparallel models
             model = model.module
     scripted_model = torch.jit.script(model)
     print(scripted_model.code)

@@ -16,14 +16,14 @@ from captum.attr import IntegratedGradients
 from ray import tune
 from ray.tune import CLIReporter
 from ray.tune.schedulers import ASHAScheduler
+from sklearn.datasets import fetch_california_housing
 from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.utils import shuffle
 from torch import float32, optim
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard import SummaryWriter
-from sklearn.datasets import fetch_california_housing
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
 
 # the dataset is from sklearn, you can use your own dataset
 data = fetch_california_housing()
@@ -166,7 +166,8 @@ def report(predicted, predicted_test, y_train, y_test,
 
 
 def interpret(model, X, y, predicted, output_dir,
-              baseline_method='zero', num_inputs=num_inputs, feature_names=data.feature_names):
+              baseline_method='zero', num_inputs=num_inputs,
+              feature_names=data.feature_names):
     ig = IntegratedGradients(model)
     rows = []
     if baseline_method == 'zero':
@@ -190,7 +191,7 @@ def interpret(model, X, y, predicted, output_dir,
     df = pd.DataFrame(X.cpu(), columns=feature_names)
     attributions = pd.concat([attributions, df], axis=1)
     attributions.to_csv('{}{}_attributions.csv'.format(output_dir,
-                                        baseline_method))
+                                                       baseline_method))
     print('IG Attributions:', attributions)
     # print('Convergence Delta:', delta)
 
@@ -233,14 +234,20 @@ if __name__ == '__main__':
         # validation split
         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train,
                                                           test_size=0.25,
-                                                          shuffle=True) 
+                                                          shuffle=True)
         # 0.25 x 0.8 = 0.2
-        X_train = torch.tensor(X_train, dtype=torch.float32).to(device)
-        y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1).to(device)
-        X_test = torch.tensor(X_test, dtype=torch.float32).to(device)
-        y_test = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1).to(device)
-        X_val = torch.tensor(X_val, dtype=torch.float32).to(device)
-        y_val = torch.tensor(y_val, dtype=torch.float32).reshape(-1, 1).to(device)
+        X_train = torch.tensor(X_train,
+                               dtype=torch.float32).to(device)
+        y_train = torch.tensor(y_train,
+                               dtype=torch.float32).reshape(-1, 1).to(device)
+        X_test = torch.tensor(X_test,
+                              dtype=torch.float32).to(device)
+        y_test = torch.tensor(y_test,
+                              dtype=torch.float32).reshape(-1, 1).to(device)
+        X_val = torch.tensor(X_val,
+                             dtype=torch.float32).to(device)
+        y_val = torch.tensor(y_val,
+                             dtype=torch.float32).reshape(-1, 1).to(device)
 
         # X_train, y_train = shuffle(X_train, y_train)
         train_ds = TensorDataset(X_train, y_train)
@@ -293,5 +300,6 @@ if __name__ == '__main__':
         # model.load_state_dict(torch.load('development/model_weights.pth'))
         # model.to(device)
         # model.eval()
-        interpret(model, X_test, y_test, predicted_test, output_dir=args.output_dir,
+        interpret(model, X_test, y_test, predicted_test,
+                  output_dir=args.output_dir,
                   baseline_method='zero', num_inputs=num_inputs)
