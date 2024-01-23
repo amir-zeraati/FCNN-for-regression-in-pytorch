@@ -41,6 +41,8 @@ device = torch.device(
 
 if torch.cuda.device_count() > 1:
     print("Let's use", torch.cuda.device_count(), "GPUs!")
+    
+device = torch.device("cpu")
 model = MLP()
 
 
@@ -49,9 +51,15 @@ if __name__ == '__main__':
         model = nn.DataParallel(model)
         model.load_state_dict(torch.load('development/model_weights.pth',
                                          map_location=device))
-        if isinstance(model,
-                      torch.nn.DataParallel):  # extract the module from dataparallel models
-            model = model.module
+        model.eval()
+    if isinstance(model, torch.nn.DataParallel):  # extract the module from dataparallel models
+        model = model.module
+    # Adding dynamic quantization to the model, if you don't want to quantize the model, comment the following lines
+    model = torch.quantization.quantize_dynamic(
+        model, qconfig_spec={torch.nn.Linear}, dtype=torch.qint8)
+    # save the model
+    torch.save(model.state_dict(), 'development/quantized_model_weights.pth')
     scripted_model = torch.jit.script(model)
+    
     print(scripted_model.code)
     scripted_model.save('development/scripted_model.pt')
